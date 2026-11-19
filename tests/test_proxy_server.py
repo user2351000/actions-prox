@@ -7,7 +7,14 @@ from unittest.mock import MagicMock, patch
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError
 
-from proxy_server import LinkRewriter, ProxyHandler, valid_target_url, validate_credentials
+from proxy_server import (
+    _AUTH_FAILURES,
+    _AUTH_FAILURES_LOCK,
+    LinkRewriter,
+    ProxyHandler,
+    valid_target_url,
+    validate_credentials,
+)
 
 
 class TargetValidationTests(unittest.TestCase):
@@ -49,6 +56,8 @@ class CredentialValidationTests(unittest.TestCase):
 class AuthenticationTests(unittest.TestCase):
     def setUp(self):
         self.password = "aB3!@#$%^&*()_+-=[]{} " * 2
+        with _AUTH_FAILURES_LOCK:
+            _AUTH_FAILURES.clear()
         self.env = patch.dict(
             os.environ,
             {
@@ -117,6 +126,39 @@ class AuthenticationTests(unittest.TestCase):
             b'/fetch?url=https%3A%2F%2Fwww.google.com%2Fsearch%3Fq%3Dnext',
             body,
         )
+
+    def test_repeated_bad_passwords_are_rate_limited_by_client_ip(self):
+        for _ in range(5):
+            with self.assertRaises(HTTPError) as error:
+                urlopen(f"{self.base_url}/")
+            self.assertEqual(error.exception.code, 401)
+            error.exception.close()
+
+        with self.assertRaises(HTTPError) as error:
+            urlopen(f"{self.base_url}/")
+        self.assertEqual(error.exception.code, 429)
+        self.assertGreater(int(error.exception.headers["Retry-After"]), 0)
+        error.exception.close()
+
+    def test_successful_authentication_clears_failed_attempts(self):
+        for _ in range(4):
+            with self.assertRaises(HTTPError) as error:
+                urlopen(f"{self.base_url}/")
+            self.assertEqual(error.exception.code, 401)
+            error.exception.close()
+
+        credentials = base64.b64encode(f"testuser:{self.password}".encode()).decode()
+        request = Request(
+            f"{self.base_url}/",
+            headers={"Authorization": f"Basic {credentials}"},
+        )
+        with urlopen(request) as response:
+            self.assertEqual(response.status, 200)
+
+        with self.assertRaises(HTTPError) as error:
+            urlopen(f"{self.base_url}/")
+        self.assertEqual(error.exception.code, 401)
+        error.exception.close()
 
 
 if __name__ == "__main__":

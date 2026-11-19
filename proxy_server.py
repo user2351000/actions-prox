@@ -1,12 +1,17 @@
 #!/usr/bin/env python3
 import base64
 import binascii
+from collections import deque
 import hmac
 import html
 from html.parser import HTMLParser
+import ipaddress
+import math
 import os
 import re
 import sys
+import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, quote, urljoin, urlsplit
@@ -22,6 +27,10 @@ ALLOWED_DOMAINS = {
 MAX_URL_LENGTH = 4096
 MAX_RESPONSE_BYTES = 4 * 1024 * 1024
 FETCH_TIMEOUT_SECONDS = 15
+AUTH_FAILURE_LIMIT = 5
+AUTH_FAILURE_WINDOW_SECONDS = 300
+_AUTH_FAILURES = {}
+_AUTH_FAILURES_LOCK = threading.Lock()
 
 
 def valid_target_url(url):
@@ -127,25 +136,58 @@ class ProxyHandler(BaseHTTPRequestHandler):
         if body:
             self.wfile.write(body)
 
-    def _authorized(self):
+    def _client_ip(self):
+        forwarded_ip = self.headers.get("CF-Connecting-IP", "").strip()
+        try:
+            return str(ipaddress.ip_address(forwarded_ip))
+        except ValueError:
+            return self.client_address[0]
+
+    def _authenticate(self):
         user = os.environ.get("PROXY_USER", "")
         password = os.environ.get("PROX_PASS", "")
-        if not validate_credentials(user, password):
-            return False
+        valid_credentials = validate_credentials(user, password)
         header = self.headers.get("Authorization", "")
         scheme, _, encoded = header.partition(" ")
-        if scheme.lower() != "basic":
-            return False
-        try:
-            provided = base64.b64decode(encoded, validate=True).decode("utf-8")
-        except (binascii.Error, UnicodeDecodeError):
-            return False
+        provided = ""
+        if scheme.lower() == "basic":
+            try:
+                provided = base64.b64decode(encoded, validate=True).decode("utf-8")
+            except (binascii.Error, UnicodeDecodeError):
+                pass
         expected = f"{user}:{password}"
-        return hmac.compare_digest(provided, expected)
+        is_valid = valid_credentials and hmac.compare_digest(provided, expected)
+        client_ip = self._client_ip()
+        now = time.monotonic()
+
+        with _AUTH_FAILURES_LOCK:
+            failures = _AUTH_FAILURES.get(client_ip, deque())
+            while failures and now - failures[0] >= AUTH_FAILURE_WINDOW_SECONDS:
+                failures.popleft()
+            if len(failures) >= AUTH_FAILURE_LIMIT:
+                retry_after = math.ceil(
+                    AUTH_FAILURE_WINDOW_SECONDS - (now - failures[0])
+                )
+                _AUTH_FAILURES[client_ip] = failures
+                return False, retry_after
+            if is_valid:
+                _AUTH_FAILURES.pop(client_ip, None)
+                return True, 0
+            failures.append(now)
+            _AUTH_FAILURES[client_ip] = failures
+            return False, 0
 
     def _require_auth(self):
-        if self._authorized():
+        authorized, retry_after = self._authenticate()
+        if authorized:
             return True
+        if retry_after:
+            self._send(
+                429,
+                b"Too many failed authentication attempts",
+                headers={"Retry-After": str(retry_after)},
+            )
+            return False
         self._send(
             401,
             b"Authentication required",

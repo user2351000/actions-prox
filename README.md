@@ -15,7 +15,7 @@ A temporary, browser-based web proxy for Google, X, and Spotify running on GitHu
 
 - Only HTTPS URLs on `google.com`, `google.co.jp`, `x.com`, and `spotify.com` and their subdomains are allowed. This is deliberately not an open proxy.
 - The proxy supports GET requests only. Sign-in, POST forms, and assets hosted outside the allowed domains may not work.
-- The Quick Tunnel URL is public and changes on each run. Basic authentication is required; keep the credentials private.
+- The Quick Tunnel URL is public and changes on each run. Basic authentication is required; keep the credentials private. Five failed logins from the same client IP trigger a temporary five-minute rate limit; successful login clears that client's failed attempts.
 - The workflow runs only while the Actions job is active and is configured to stop after six hours. Quick Tunnels are for testing and development, have no uptime guarantee, and the URL becomes inactive when the job ends.
 - This is a temporary experiment, not a persistent or production web proxy. Do not enter sensitive information.
 
