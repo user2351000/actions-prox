@@ -13,11 +13,11 @@ from urllib.parse import parse_qs, quote, urljoin, urlsplit
 from urllib.request import HTTPRedirectHandler, ProxyHandler as NoProxyHandler, Request, build_opener
 
 
-ALLOWED_HOSTS = {
+ALLOWED_DOMAINS = {
     "google.com",
-    "www.google.com",
     "google.co.jp",
-    "www.google.co.jp",
+    "x.com",
+    "spotify.com",
 }
 MAX_URL_LENGTH = 4096
 MAX_RESPONSE_BYTES = 4 * 1024 * 1024
@@ -29,9 +29,14 @@ def valid_target_url(url):
         return False
     try:
         parsed = urlsplit(url)
+        hostname = parsed.hostname
         return (
             parsed.scheme == "https"
-            and parsed.hostname in ALLOWED_HOSTS
+            and hostname is not None
+            and any(
+                hostname == domain or hostname.endswith(f".{domain}")
+                for domain in ALLOWED_DOMAINS
+            )
             and parsed.port in (None, 443)
             and parsed.username is None
             and parsed.password is None
@@ -43,7 +48,8 @@ def valid_target_url(url):
 def validate_credentials(user, password):
     return bool(
         re.fullmatch(r"[A-Za-z0-9._-]{1,64}", user)
-        and re.fullmatch(r"[A-Za-z0-9_-]{32,}", password)
+        and len(password) >= 32
+        and password.isprintable()
     )
 
 
@@ -166,13 +172,13 @@ class ProxyHandler(BaseHTTPRequestHandler):
 <html lang="en">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Temporary Google web proxy</title>
+<title>Temporary web proxy</title>
 <body>
-<h1>Temporary Google web proxy</h1>
-<p>Only HTTPS pages on google.com and google.co.jp are fetched through this server.
+<h1>Temporary web proxy</h1>
+<p>Only HTTPS pages on Google, X, and Spotify domains are fetched through this server.
 Other destinations, POST requests, and sign-in flows are not supported.</p>
 <form action="/fetch" method="get">
-  <label for="url">Google URL</label>
+  <label for="url">URL</label>
   <input id="url" name="url" type="url" value="https://www.google.com/" required>
   <button type="submit">Open through proxy</button>
 </form>
@@ -183,7 +189,7 @@ Other destinations, POST requests, and sign-in flows are not supported.</p>
         query = parse_qs(urlsplit(self.path).query, keep_blank_values=True)
         targets = query.get("url", [])
         if len(targets) != 1 or not valid_target_url(targets[0]):
-            self._send(400, b"Only HTTPS URLs on google.com or google.co.jp are allowed")
+            self._send(400, b"URL must be HTTPS on google.com, google.co.jp, x.com, or spotify.com")
             return
 
         request = Request(

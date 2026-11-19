@@ -21,16 +21,12 @@ jobs:
         run: |
           set -euo pipefail
 
-          if [[ ! "$PROXY_USER" =~ ^[A-Za-z0-9._-]{1,64}$ ]]; then
-            echo "Set PROXY_USER to 1-64 letters, digits, dots, underscores, or hyphens."
-            exit 1
-          fi
-          if [[ ! "$PROXY_PASSWORD" =~ ^[A-Za-z0-9_-]{32,}$ ]]; then
-            echo "Set PROXY_PASSWORD to at least 32 letters, digits, underscores, or hyphens."
+          if ! python3 -c 'import os, sys; from proxy_server import validate_credentials; sys.exit(0 if validate_credentials(os.environ.get("PROXY_USER", ""), os.environ.get("PROXY_PASSWORD", "")) else 1)'; then
+            echo "PROXY_USER must be 1-64 letters, digits, dots, underscores, or hyphens; PROXY_PASSWORD must be at least 32 printable characters."
             exit 1
           fi
 
-          python3 proxy_server.py &
+          python3 proxy_server.py >"$RUNNER_TEMP/proxy.log" 2>&1 &
           server_pid=$!
           cloudflared_pid=""
 
@@ -48,7 +44,11 @@ jobs:
             fi
             sleep 1
           done
-          curl --fail --silent --show-error http://127.0.0.1:8080/healthz >/dev/null
+          if ! curl --fail --silent --show-error http://127.0.0.1:8080/healthz >/dev/null; then
+            cat "$RUNNER_TEMP/proxy.log"
+            echo "The web proxy failed to start."
+            exit 1
+          fi
 
           curl --fail --silent --show-error --location \
             https://github.com/cloudflare/cloudflared/releases/download/2026.11.1/cloudflared-linux-amd64 \

@@ -7,16 +7,22 @@ from unittest.mock import MagicMock, patch
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError
 
-from proxy_server import LinkRewriter, ProxyHandler, valid_target_url
+from proxy_server import LinkRewriter, ProxyHandler, valid_target_url, validate_credentials
 
 
 class TargetValidationTests(unittest.TestCase):
-    def test_allows_only_https_google_hosts(self):
+    def test_allows_only_https_urls_on_permitted_domains(self):
         self.assertTrue(valid_target_url("https://www.google.com/search?q=test"))
         self.assertTrue(valid_target_url("https://google.co.jp/"))
+        self.assertTrue(valid_target_url("https://x.com/"))
+        self.assertTrue(valid_target_url("https://www.x.com/"))
+        self.assertTrue(valid_target_url("https://open.spotify.com/"))
+        self.assertTrue(valid_target_url("https://accounts.spotify.com/"))
         self.assertFalse(valid_target_url("http://www.google.com/"))
         self.assertFalse(valid_target_url("https://example.com/"))
         self.assertFalse(valid_target_url("https://www.google.com.evil.example/"))
+        self.assertFalse(valid_target_url("https://x.com.evil.example/"))
+        self.assertFalse(valid_target_url("https://spotify.com.evil.example/"))
         self.assertFalse(valid_target_url("https://user:pass@www.google.com/"))
         self.assertFalse(valid_target_url("https://www.google.com:444/"))
 
@@ -31,13 +37,23 @@ class TargetValidationTests(unittest.TestCase):
         self.assertIn('href="https://example.com/"', output)
 
 
+class CredentialValidationTests(unittest.TestCase):
+    def test_accepts_long_passwords_with_symbols_and_spaces(self):
+        self.assertTrue(validate_credentials("testuser", "aB3!@#$%^&*()_+-=[]{} " * 2))
+
+    def test_rejects_short_or_non_printable_passwords(self):
+        self.assertFalse(validate_credentials("testuser", "short"))
+        self.assertFalse(validate_credentials("testuser", "a" * 31 + "\n"))
+
+
 class AuthenticationTests(unittest.TestCase):
     def setUp(self):
+        self.password = "aB3!@#$%^&*()_+-=[]{} " * 2
         self.env = patch.dict(
             os.environ,
             {
                 "PROXY_USER": "testuser",
-                "PROXY_PASSWORD": "a" * 32,
+                "PROXY_PASSWORD": self.password,
             },
         )
         self.env.start()
@@ -58,17 +74,17 @@ class AuthenticationTests(unittest.TestCase):
         self.assertEqual(error.exception.code, 401)
         error.exception.close()
 
-        credentials = base64.b64encode(b"testuser:" + b"a" * 32).decode()
+        credentials = base64.b64encode(f"testuser:{self.password}".encode()).decode()
         request = Request(
             f"{self.base_url}/",
             headers={"Authorization": f"Basic {credentials}"},
         )
         with urlopen(request) as response:
             self.assertEqual(response.status, 200)
-            self.assertIn(b"Temporary Google web proxy", response.read())
+            self.assertIn(b"Temporary web proxy", response.read())
 
-    def test_fetch_rejects_non_google_destinations(self):
-        credentials = base64.b64encode(b"testuser:" + b"a" * 32).decode()
+    def test_fetch_rejects_destinations_outside_allowlist(self):
+        credentials = base64.b64encode(f"testuser:{self.password}".encode()).decode()
         request = Request(
             f"{self.base_url}/fetch?url=https%3A%2F%2Fexample.com%2F",
             headers={"Authorization": f"Basic {credentials}"},
@@ -78,8 +94,8 @@ class AuthenticationTests(unittest.TestCase):
         self.assertEqual(error.exception.code, 400)
         error.exception.close()
 
-    def test_fetch_returns_google_html_with_internal_links_rewritten(self):
-        credentials = base64.b64encode(b"testuser:" + b"a" * 32).decode()
+    def test_fetch_returns_permitted_html_with_internal_links_rewritten(self):
+        credentials = base64.b64encode(f"testuser:{self.password}".encode()).decode()
         request = Request(
             f"{self.base_url}/fetch?url=https%3A%2F%2Fwww.google.com%2Fsearch%3Fq%3Dtest",
             headers={"Authorization": f"Basic {credentials}"},
