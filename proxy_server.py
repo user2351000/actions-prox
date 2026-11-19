@@ -129,7 +129,7 @@ class ProxyHandler(BaseHTTPRequestHandler):
 
     def _authorized(self):
         user = os.environ.get("PROXY_USER", "")
-        password = os.environ.get("PROXY_PASSWORD", "")
+        password = os.environ.get("PROX_PASS", "")
         if not validate_credentials(user, password):
             return False
         header = self.headers.get("Authorization", "")
@@ -238,11 +238,11 @@ Other destinations, POST requests, and sign-in flows are not supported.</p>
 
 def main():
     user = os.environ.get("PROXY_USER", "")
-    password = os.environ.get("PROXY_PASSWORD", "")
+    password = os.environ.get("PROX_PASS", "")
     if not validate_credentials(user, password):
         raise SystemExit(
             "Set PROXY_USER (1-64 allowed characters) and "
-            "PROXY_PASSWORD (at least 32 letters, digits, underscores, or hyphens)."
+            "PROX_PASS (at least 32 printable characters)."
         )
     server = ThreadingHTTPServer(("127.0.0.1", 8080), ProxyHandler)
     print("Web proxy listening on 127.0.0.1:8080")

@@ -6,7 +6,7 @@ A temporary, browser-based web proxy for Google, X, and Spotify running on GitHu
 
 1. In **Settings → Secrets and variables → Actions**, add:
    - `PROXY_USER`: 1-64 letters, digits, dots, underscores, or hyphens.
-   - `PROXY_PASSWORD`: at least 32 printable characters. Symbols and spaces are allowed; control characters are not.
+   - `PROX_PASS`: at least 32 printable characters. Symbols and spaces are allowed; control characters are not.
 2. Open **Actions → Start browser web proxy → Run workflow**.
 3. Open the `trycloudflare.com` URL printed in the workflow log and enter the secret credentials when prompted.
 4. Enter a URL on Google, X, or Spotify. The proxy fetches the page server-side and returns it to the browser.

@@ -53,7 +53,7 @@ class AuthenticationTests(unittest.TestCase):
             os.environ,
             {
                 "PROXY_USER": "testuser",
-                "PROXY_PASSWORD": self.password,
+                "PROX_PASS": self.password,
             },
         )
         self.env.start()

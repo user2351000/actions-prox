@@ -17,12 +17,12 @@ jobs:
       - name: Start authenticated web proxy and temporary tunnel
         env:
           PROXY_USER: ${{ secrets.PROXY_USER }}
-          PROXY_PASSWORD: ${{ secrets.PROXY_PASSWORD }}
+          PROX_PASS: ${{ secrets.PROX_PASS }}
         run: |
           set -euo pipefail
 
-          if ! python3 -c 'import os, sys; from proxy_server import validate_credentials; sys.exit(0 if validate_credentials(os.environ.get("PROXY_USER", ""), os.environ.get("PROXY_PASSWORD", "")) else 1)'; then
-            echo "PROXY_USER must be 1-64 letters, digits, dots, underscores, or hyphens; PROXY_PASSWORD must be at least 32 printable characters."
+          if ! python3 -c 'import os, sys; from proxy_server import validate_credentials; sys.exit(0 if validate_credentials(os.environ.get("PROXY_USER", ""), os.environ.get("PROX_PASS", "")) else 1)'; then
+            echo "PROXY_USER must be 1-64 letters, digits, dots, underscores, or hyphens; PROX_PASS must be at least 32 printable characters."
             exit 1
           fi
 
@@ -82,5 +82,5 @@ jobs:
           fi
 
           echo "Open this URL in a browser: $tunnel_url"
-          echo "When prompted, enter the PROXY_USER and PROXY_PASSWORD repository secrets."
+          echo "When prompted, enter the PROXY_USER and PROX_PASS repository secrets."
           wait "$cloudflared_pid"
